@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
         -------------------------------------------------------------------------------------------------------------------- """
     def make_video(self):
         image_folder='./output/' + self.ui.inputTxt_dirFig.text()
-        fps=6
+        fps=12
         image_files = [image_folder+'/'+img for img in os.listdir(image_folder) if img.endswith(".png")]
         image_files.sort(key=lambda i: int(i.split('/')[-1].split('-')[-1].split('.')[0]))
         clip = moviepy.video.io.ImageSequenceClip.ImageSequenceClip(image_files, fps=fps)
@@ -128,10 +128,12 @@ class MainWindow(QMainWindow):
     Output: list with all HLS PVs
         -------------------------------------------------------------------------------------------------------------------- """
     def generate_all_sensors_list (self):
+        sectors = [17, 16, 15, 14, 13, 1, 1, 20, 19, 18, 6, 6, 5, 4, 3, 11, 11, 10, 9, 8]
+        axis = [4, 1, 59, 57, 54, 18, 16, 14, 12, 9, 33, 31, 29, 27, 24, 48, 46, 44, 42, 39]
+        quadrant = ['NE5', 'NE4', 'NE3', 'NE2', 'NE1', 'SE5', 'SE4', 'SE3', 'SE2', 'SE1', 'SW5', 'SW4', 'SW3', 'SW2', 'SW1', 'NW5', 'NW4', 'NW3', 'NW2', 'NW1']
         sensors_list = []
-        for c_num in range(1, 5):
-            for s_num in range(1, 6):
-                sensors_list.append(f'HLS:C{c_num}_S{s_num}_LEVEL')
+        for sector, ax, quad in zip(sectors, axis, quadrant):
+            sensors_list.append(f'TU-{sector:02d}C:SS-HLS-Ax{ax:02d}{quad}:Level-Mon')
         return sensors_list
 
 
@@ -197,9 +199,10 @@ class MainWindow(QMainWindow):
         ts2 = time.mktime(datetime.strptime(data_df.index.values[1], "%d.%m.%y %H:%M").timetuple())
         acq_period = ts2 - ts1
         T = acq_period # in seconds
-        b, a = butter(4, [5.55e-5, 2.77e-4], 'bandpass', fs=1/T) #bandpass from 1h to 5h
-        # for sensor in data_df.columns:
-        #     data_df.loc[:,sensor] = filtfilt(b,a, data_df.loc[:,sensor].values)
+        if (self.ui.check_applyFilter.isChecked()):
+            b, a = butter(4, [5.55e-5, 2.77e-4], 'bandpass', fs=1/T) #bandpass from 1h to 5h
+            for sensor in data_df.columns:
+                data_df.loc[:,sensor] = filtfilt(b,a, data_df.loc[:,sensor].values)
 
         # referencing in one sensor
         sens_ref = 19
@@ -301,12 +304,15 @@ class MainWindow(QMainWindow):
             time_ax = np.linspace(0, T*N, N)
             # creating frequency x axis data
             W = fftfreq(N, T)[:N//2+1]
-            # applying filter
-            b, a = butter(4, [5.55e-5, 2.77e-4], 'bandpass', fs=1/T) #bandpass from 1h to 5h
-            try:
-                filtered_data = filtfilt(b,a, timeserie)
-            except ValueError:
-                # print(f'Filter not applyed in ts {timestamp}')
+            # applying filter if needed
+            if (self.ui.check_applyFilter.isChecked()):
+                b, a = butter(4, [5.55e-5, 2.77e-4], 'bandpass', fs=1/T) #bandpass from 1h to 5h
+                try:
+                    filtered_data = filtfilt(b,a, timeserie)
+                except ValueError:
+                    # print(f'Filter not applyed in ts {timestamp}')
+                    filtered_data = timeserie
+            else:
                 filtered_data = timeserie
             # calculating fft
             yr = rfft(filtered_data)
@@ -339,6 +345,8 @@ class MainWindow(QMainWindow):
             else:
                 self.logMessage(f"Doesn't know how to plot {pv}, skiping it...", 'danger')
                 continue
+            # fft_plot_data.append((W, yr, N, timestamp, period_max_peak))
+            # filtered_timeseries.append(filtered_data)
         output = {'fft_plot_data': fft_plot_data, 'filtered_data_list': filtered_timeseries, 'time': time_ax}
         return output
 
@@ -348,43 +356,15 @@ class MainWindow(QMainWindow):
     Args: 
     Output:
         -------------------------------------------------------------------------------------------------------------------- """
-    def plot_fft_static(self, fft_data_raw):
-        fig = plt.figure(figsize=(18,9))#(10,6)
-        ax = fig.add_subplot()
-
-        for fft_data in fft_data_raw['fft_plot_data']:
-            (xf, yf, N) = fft_data
-            
-            # maping freq to period
-            xf = np.array(xf)
-            xp = 1/xf/60/60
-            # ploting fft
-            ax.plot(xp, 2/(N/2) * yf)
-        # formating plot
-        ax.grid(True, axis='x', which='both')
-        # increasing x ticks density
-        ax.set_xticks(np.arange(0,46, 2))
-        ax.set_xticks(np.arange(0,46, 1), minor=True)
-
-        ax.set_xlim(0.5, 8)
-        # ax.set_ylim(-0.0002, 0.025)
-
-        ax.xaxis.labelpad = 10
-        ax.yaxis.labelpad = 10
-
-        ax.set_xlabel('Period [h]', fontsize=15) #16
-        ax.set_ylabel('Absolute power FFT [mm^2]', fontsize=15) #16
-
-        ax.tick_params(axis='both', labelsize=23)
-
-
-        # ploting filtered timeseries for checking purpouses
-        if (self.ui.check_plotFiltSignal.isChecked()):
-            fig2 = plt.figure(figsize=(18,9))#(10,6)
-            ax2 = fig2.add_subplot()
-            for filtered_data in fft_data_raw['filtered_data_list']:
-                ax2.plot(fft_data_raw['time'], filtered_data)
-
+    def plot_fft_static(self):
+        fft_data = self.calculate_fft(self.data)
+        xf = np.array(fft_data['fft_plot_data'][0][0])
+        y = fft_data['fft_plot_data'][0][1]
+        N = fft_data['fft_plot_data'][0][2]
+        xp = 1/xf/60/60
+        yf = 2/(N/2) * y
+        plt.plot(xp, yf)
+        plt.plot(fft_data['time'], fft_data['filtered_data_list'][0])
         plt.show()
 
 
@@ -456,7 +436,14 @@ class MainWindow(QMainWindow):
     Args:
         trimmed_fft_data: fft data divided into segregated chuncks
         -------------------------------------------------------------------------------------------------------------------- """
-    def plot_fft_dynamic(self, trimmed_fft_data):
+    def plot_fft_dynamic(self):
+        # generating data structrures
+        trimmed_time_data = self.generate_dynamic_timeseries_data()
+        trimmed_fft_data = {}
+        for pv in self.loaded_pvs:
+            fft_data = self.calculate_fft(trimmed_time_data[pv])
+            trimmed_fft_data[pv] = fft_data
+
         # creating canvas and axes
         fig = plt.figure(figsize=(18,9))#(10,6)
         ax = fig.add_subplot()
@@ -535,12 +522,17 @@ class MainWindow(QMainWindow):
         # plotting first filtered time data from first loaded pv if requested by user
         if (self.ui.check_plotFiltSignal.isChecked()):
             fig3 = plt.figure()
-            ax3 = fig3.add_subplot()
-            timeseries = trimmed_fft_data[self.loaded_pvs[0]]['filtered_data_list'][0]/np.linalg.norm(trimmed_fft_data[self.loaded_pvs[0]]['filtered_data_list'][0])
+            ax31 = fig3.add_subplot()
+            ax32 = ax31.twinx()
+            # pv1_ts = trimmed_fft_data[self.loaded_pvs[0]]['filtered_data_list'][0]/np.linalg.norm(trimmed_fft_data[self.loaded_pvs[0]]['filtered_data_list'][0])
+            pv1_ts = trimmed_fft_data[self.loaded_pvs[0]]['filtered_data_list'][0]
+            pv2_ts = trimmed_fft_data[self.loaded_pvs[1]]['filtered_data_list'][0]
 
             color = ['#32a83a','#c78212']
-            ax3.plot(timeseries, label=self.loaded_pvs[0], color=color[0])
-            ax3.legend()
+            ax31.plot(pv1_ts, label=self.loaded_pvs[0], color=color[0])
+            ax32.plot(pv2_ts, label=self.loaded_pvs[1], color=color[1])
+            ax31.legend()
+            ax32.legend()
             plt.show()
 
         # saving fft curves if requested by user
@@ -553,11 +545,39 @@ class MainWindow(QMainWindow):
     Args:
     Output:
         -------------------------------------------------------------------------------------------------------------------- """
-    def plot_data_2D_static(self, level, time):
-        fig = plt.figure(figsize=(18,9))#(10,6)
+    def plot_data_2D_static(self):
+        fig = plt.figure()
         ax = fig.add_subplot()
-        time = [datetime.strptime(record, "%d.%m.%y %H:%M") for record in time]
-        ax.plot(time, level)
+
+        # # ploting RF and HLS
+        for data_df in self.data:
+            # filtering slow (and big) movements
+            ts1 = time.mktime(datetime.strptime(data_df.index.values[0], "%d.%m.%y %H:%M").timetuple())
+            ts2 = time.mktime(datetime.strptime(data_df.index.values[1], "%d.%m.%y %H:%M").timetuple())
+            acq_period = ts2 - ts1
+            T = acq_period # in seconds
+            b, a = butter(4, [9.25e-6, 3.47e-5], 'bandpass', fs=1/T) #bandpass from 1h to 5h
+            if (self.ui.check_saveFig.isChecked()):
+                y_data = filtfilt(b,a, data_df.iloc[:,0].values)
+            else:
+                y_data = data_df.iloc[:,0].values
+            # normalizing
+            # norm = np.linalg.norm(y_data)
+            # y_data = y_data/norm
+            if (data_df.columns[0] == 'RF-Gen:GeneralFreq-RB'):
+                y_data *= 10
+            dt = [datetime.strptime(record, "%d.%m.%y %H:%M") for record in data_df.index.values]
+            ax.plot(dt, y_data, label=data_df.columns[0])
+        
+        # # ploting pump activity
+        # pump_data = pd.read_excel('./acionamento-bomba_25-06_29-05.xlsx', index_col=0)
+        # y_pump = pump_data.iloc[:,0]
+        # norm = np.linalg.norm(y_pump)
+        # y_pump = 4*y_pump/norm
+        # # dt_pump = [datetime.strptime(record, "%y-%m-%d %H:%M:%S") for record in pump_data.index.values]
+        # ax.plot(pump_data.index, y_pump, label='pump')
+
+        ax.legend()
         plt.show()
 
 
@@ -622,7 +642,10 @@ class MainWindow(QMainWindow):
 
                 # ax.set_ylim(-0.21, 0.11) #25/6
                 # ax.set_ylim(-0.13, 0.07) #24/6
-                ax.set_ylim(-0.22, 0.13) #28/6
+                # ax.set_ylim(-0.22, 0.13) #28/6
+                # ax.set_ylim(-0.31, 0.19) #28/12/20 -> 02/01/21
+                # ax.set_ylim(-0.11, 0.12) #28/12/20
+                ax.set_ylim(-0.026, 0.021)
 
                 # drawing box containing the datetime of the plotted serie
                 # ob = offsetbox.AnchoredText(timestamp, loc=2, pad=0.25, borderpad=0.5, prop=dict(fontsize=18, weight=550))#3
@@ -633,7 +656,7 @@ class MainWindow(QMainWindow):
                     text.set_color('red')
 
                 # ax.set_title("HLS @ 25/06/2021 (Artesian Well shutdown)", weight='semibold', fontsize=18, y=1.05)
-                ax.set_title("HLS @ 28/06/2021", weight='semibold', fontsize=18, y=1.05)
+                ax.set_title("HLS @ 06/07/21\nTeste de desligamento do poço | pós estabilização", weight='semibold', fontsize=18, y=1.05)
                 ax.set_ylabel(r'$\Delta \/ {Level} \/ [mm]$', fontsize=17) #14
                 ax.set_xlabel('Storage Ring sector', fontsize=17, labelpad=6)
 
@@ -649,12 +672,6 @@ class MainWindow(QMainWindow):
     def plot_data_3D(self, plot_data):
         fig = plt.figure(figsize=(9.8,7))
         ax = fig.add_subplot(111, projection='3d')
-
-        # retrieving plot data
-        # (level, legend_list, sensors) = plot_data
-
-        # finding min e max values from the series
-        # max_level, min_level = level.max(), level.min()
         
         density = len(plot_data.columns.values)
         repeat_times = 2
@@ -668,8 +685,13 @@ class MainWindow(QMainWindow):
         x_cutfill = [x[-1][6*repeat_times], x[-1][17*repeat_times]]
         y_cutfill = [y[-1][6*repeat_times], y[-1][17*repeat_times]]
         i=0
+        size_plot_array = plot_data.index.size
 
         for timestamp, values in plot_data.iterrows():
+            # printing progress
+            if (i%10==0):
+                print(f'\r[{str(round(i/size_plot_array*100,2))}%]',end='')
+
             level = values.to_numpy()
             level = np.append(level, level[0])
             level = np.repeat(level, repeat_times)
@@ -681,29 +703,42 @@ class MainWindow(QMainWindow):
             colorbar = fig.colorbar(surf, shrink=0.6, aspect=10, pad=0.13)
 
             # ax.set_title("HLS @ 25/06/2021 (Artesian Well shutdown)", weight='semibold', fontsize=15, y=1.02, x=0.65)
-            ax.set_title("HLS @ 28/06/2021", weight='semibold', fontsize=15, y=1.02, x=0.65)
+            ax.set_title("HLS @ Well shutdown test | stable period", weight='semibold', fontsize=15, y=1.02, x=0.65)
             ax.set_xlabel('x [m]', fontsize=12)
             ax.set_zlabel(r'$\Delta \/ {Level} \/ [mm]$', fontsize=12, labelpad=7) #14
             ax.set_ylabel('y [m]', fontsize=12)
             ax.tick_params(axis='both', labelsize=10)
 
-            ax.view_init(15, -55)
+            # ax.view_init(15, -55)
+            ax.view_init(8, -20)
 
-            ax.set_zlim(-0.22, 0.13)
-            surf.set_clim(-0.22, 0.13)
+            ax.set_zlim(-0.04, 0.048) #-0.16, 0.16: teste do poço inteiro
+            surf.set_clim(-0.04, 0.048)
 
             # drawing box containing the datetime of the plotted serie
-            text = ax.text(ax.get_xlim()[0], ax.get_ylim()[0], ax.get_zlim()[1]*1.25, timestamp, fontsize=13, bbox=dict(boxstyle='round', facecolor='white'))
+            box_text = timestamp
             dt = datetime.strptime(timestamp, "%d.%m.%y %H:%M")
-            if (dt > datetime(2021, 6, 25, 9, 20) and dt < datetime(2021, 6, 25, 13, 6)):
-                text.set_color('red')
+            # if (dt < datetime(2021, 7, 5, 7, 30)):
+            #     # text.set_color('red')
+            #     box_text = f'{timestamp} | before'
+            # elif (dt >= datetime(2021, 7, 5, 7, 30) and dt < datetime(2021, 7, 12, 8, 12)):
+            #     box_text = f'{timestamp} | during'
+            # else:
+            #     box_text = f'{timestamp} | after'
+
+            text = ax.text(ax.get_xlim()[0], ax.get_ylim()[0], ax.get_zlim()[1]*1.25, box_text, fontsize=13, bbox=dict(boxstyle='round', facecolor='white'))
+
+            # if (dt >= datetime(2021, 7, 5, 7, 30) and dt < datetime(2021, 7, 12, 8, 12)):
+            #     text.set_color('red')
+        
 
             fig.tight_layout()
-            plt.savefig(f"./output/hls_28-6-21_3d/hls-timeseries-{i}.png", dpi=150)
+            plt.savefig(f"./output/well-shutdown-test_stable/hls-timeseries-{i}.png", dpi=150)
             ax.cla()
             colorbar.remove()
 
             i+=1
+
 
 
     """ --------------------------------------------------------------------------------------------------------------------
@@ -809,9 +844,16 @@ class MainWindow(QMainWindow):
             pvs = [pv_internal_name]
             column_names = [pv_internal_name]
         elif (self.ui.check_selectPvs.isChecked()):
-            pv_internal_name = self.ui.inputTxt_pvs.text()
-            pvs = [pv_internal_name]
-            column_names = [pvs[0]]
+            # pv_internal_name = self.ui.inputTxt_pvs.text()
+            # pvs = [pv_internal_name]
+            # column_names = [pvs[0]]
+            pv_internal_name = 'hls-setup'
+            pvs_setup = ['hls-setup-1:level', 'hls-setup-2:level', 'hls-setup-3:level', 'hls-setup-4:level',\
+                         'hls-setup-1:temp', 'hls-setup-2:temp', 'hls-setup-3:temp', 'hls-setup-4:temp']
+            pvs_fogale = list(np.array(self.generate_all_sensors_list())[[2,7,12,17]])
+            # print(pvs_fogale)
+            pvs = pvs_setup + pvs_fogale
+            column_names = pvs
         else:
             self.logMessage('PV not recognized', 'danger')
             return
@@ -824,6 +866,7 @@ class MainWindow(QMainWindow):
             res_level = await self.retrieve_data(pvs, timespam[0], timespam[1], optimize, time_in_minutes)
             # treating raw json data
             # level
+            print(res_level)
             for i in range (len(pvs)):
                 level_raw.append(res_level[i][0]['data'])
             for serie in level_raw:
@@ -844,8 +887,8 @@ class MainWindow(QMainWindow):
             self.data.append(data)
 
             # storing excel if needed
-            if (False):
-                data.to_excel('./data/hls_24h_06-06-21.xlsx')
+            if (True):
+                self.data[0].to_excel('./setup-comissiong-data.xlsx')
 
         except IndexError:
             self.logMessage('No data retrieved for this timespam', 'danger')
@@ -863,39 +906,26 @@ class MainWindow(QMainWindow):
     Desc.: event function called when plot button is pressed on ui; plots data based on user selections
         -------------------------------------------------------------------------------------------------------------------- """ 
     def on_btn_plot_clicked(self):
-        # preparing generic static data to plot
-        if (self.ui.check_plotStatic.isChecked()):
-            static_plot_data = []
-            for pv, data in zip(self.loaded_pvs, self.data):
-                static_plot_data.append(data.iloc[:, 0].values)
-            ts = self.data[0].index
-
         # ploting fft series
         if (self.ui.check_plotFFT.isChecked()):
             if (self.ui.check_plotDynamic.isChecked()):
-                trimmed_time_data = self.generate_dynamic_timeseries_data()
-                trimmed_fft_data = {}
-                for pv in self.loaded_pvs:
-                    fft_data = self.calculate_fft(trimmed_time_data[pv])
-                    trimmed_fft_data[pv] = fft_data
-                self.plot_fft_dynamic(trimmed_fft_data)
+                self.plot_fft_dynamic()
             else:
-                fft_data = self.calculate_fft(static_plot_data)
-                self.plot_fft_static(fft_data)
+                self.plot_fft_static()
             return
         
         # ploting time series
         if (self.ui.check_plotTime.isChecked()):
             if (self.ui.check_plotDynamic.isChecked()):
+                # arranging data structure
+                plot_data = self.generate_HLS_data_to_dynamic_time_plot()
                 # ploting
                 if (self.ui.check_plot2D.isChecked()):
-                    plot_data = self.generate_HLS_data_to_dynamic_time_plot()
                     self.plot_data_2D(plot_data)
                 else:
-                    plot_data = self.generate_HLS_data_to_dynamic_time_plot()
                     self.plot_data_3D(plot_data)
             else:
-                self.plot_data_2D_static(static_plot_data, ts)
+                self.plot_data_2D_static()
             return
                 
 

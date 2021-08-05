@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>489</width>
-    <height>522</height>
+    <height>542</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -343,6 +343,13 @@ padding:3;</string>
            <widget class="Line" name="line_3">
             <property name="orientation">
              <enum>Qt::Horizontal</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="check_applyFilter">
+            <property name="text">
+             <string>Apply filter</string>
             </property>
            </widget>
           </item>
