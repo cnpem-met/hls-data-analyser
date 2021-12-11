@@ -1,12 +1,13 @@
-standalone-app/__pycache__/
-standalone-app/obsoletos/
-standalone-app/data/
-standalone-app/tentativas/
-standalone-app/.vscode/
-standalone-app/output/*
-!standalone-app/output/.keepme
-standalone-app/input/*
-!standalone-app/input/.keepme
+**/__pycache__/
+**/.vscode/
+**/.qt_for_python/
 
+standalone-app/obsoletos/
+
+standalone-app/data/output/*
+!standalone-app/output/.keepme
+
+standalone-app/data/input/*
+!standalone-app/input/.keepme
 
 notebooks/.ipynb_checkpoints/
