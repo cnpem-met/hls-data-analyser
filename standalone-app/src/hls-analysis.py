@@ -38,6 +38,8 @@ from matplotlib.ticker import FormatStrFormatter
 import matplotlib.dates as mdates
 import matplotlib.offsetbox as offsetbox
 
+from ui.handler import Ui_handler
+
 
 # ---- packages above are called inside the calling functions to optimize app's startup time -----
 # import seaborn as sns
@@ -50,58 +52,6 @@ IDEIAS P/ IMPLEMENTAR:
     - tirar manualmente pontos no grafico de correlação (correlações em dias com dados não integros)
 
 """
-
-
-# %%
-
-class Plot():
-    fig = None
-    ax = None
-    lined = {}
-
-    def __init__ (self):
-        self.fig = figure(figsize=(14, 8))
-        self.ax = self.fig.add_subplot()
-
-    def get_plot_props (self):
-        return self.fig, self.ax
-
-    def get_lined (self):
-        return self.lined
-
-    def define_legend_items (self, legend, plot_lines, plot_markers=None):
-        if not plot_markers:
-            for legline, origline in zip(legend.get_lines(), plot_lines):
-                legline.set_picker(True)  # Enable picking on the legend line.
-                self.lined[legline] = origline
-        else:
-            for legline, origline, origmark in zip(legend.get_lines(), plot_lines, plot_markers):
-                legline.set_picker(True)  # Enable picking on the legend line.
-                self.lined[legline] = (origline, origmark)
-    
-    @staticmethod
-    def change_legend_alpha (legend):
-        for legline in legend.get_lines():
-            legline.set_alpha(1)
-
-    @staticmethod
-    def on_pick(event, fig, lined):
-        # On the pick event, find the original line corresponding to the legend
-        # proxy line, and toggle its visibility.
-        legline = event.artist
-        try:
-            origline, origmark = lined[legline]
-            visible = not origline.get_visible()
-            origline.set_visible(visible)
-            origmark.set_visible(visible)
-        except TypeError:
-            origline = lined[legline]
-            visible = not origline.get_visible()
-            origline.set_visible(visible)
-        # Change the alpha on the line in the legend so we can see what lines
-        # have been toggled.
-        legline.set_alpha(1.0 if visible else 0.2)
-        fig.canvas.draw()
 
 
 
@@ -127,13 +77,9 @@ class App(QWidget):
         self.mainWindow.show()
 
         # initializing ui components
-        self.ui = Ui_MainWindow()
-        self.ui.setupUi(self.mainWindow)
-        self.ui.btn_fetchFromArchiver.clicked.connect(self.on_btn_fetchFromArchiver_clicked)
-        self.ui.btn_plot.clicked.connect(self.on_btn_plot_clicked)
-        self.ui.btn_cleanData.clicked.connect(self.clean_loaded_data)
-        self.ui.check_selectPvs.toggled.connect(self.toggle_pv_input)
-        self.ui.btn_makeVideo.clicked.connect(self.make_video)
+        mainwindow_widget = Ui_MainWindow()
+        mainwindow_widget.setupUi(self.mainWindow)
+        self.ui = Ui_handler(mainwindow_widget, self)
 
         # app state variables
         self.app = app
@@ -142,13 +88,6 @@ class App(QWidget):
 
         # constants
         self.hls_pvs = self.generate_all_sensors_list()
-
-
-    """  --------------------------------------------------------------------------------------------------------------------
-    Desc.: ui function to trigger 'enable' state of a textbox
-        -------------------------------------------------------------------------------------------------------------------- """
-    def toggle_pv_input(self):
-        self.ui.inputTxt_pvs.setEnabled(self.ui.check_selectPvs.isChecked())
 
 
     """  --------------------------------------------------------------------------------------------------------------------
@@ -1368,8 +1307,7 @@ async def main():
 
     app = QApplication.instance()
     if hasattr(app, 'aboutToQuit'):
-        getattr(app, 'aboutToQuit')\
-            .connect(partial(close_future, future, loop))
+        getattr(app, 'aboutToQuit').connect(partial(close_future, future, loop))
 
     application = App(app)
 
