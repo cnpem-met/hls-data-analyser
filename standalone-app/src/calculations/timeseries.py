@@ -42,8 +42,8 @@ def filter_timeseries_in_df(data: pd.DataFrame, min_period_filt: float, max_peri
 
     filtered_data = data.copy()
 
-    ts1 = time.mktime(datetime.strptime(filtered_data.index.values[0], "%d.%m.%y %H:%M").timetuple())
-    ts2 = time.mktime(datetime.strptime(filtered_data.index.values[1], "%d.%m.%y %H:%M").timetuple())
+    ts1 = time.mktime(pd.to_datetime(filtered_data.index.values[0]).timetuple())
+    ts2 = time.mktime(pd.to_datetime(filtered_data.index.values[1]).timetuple())
     acq_period = ts2 - ts1
     T = acq_period # in seconds
 

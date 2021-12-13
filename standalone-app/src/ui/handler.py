@@ -47,6 +47,17 @@ class Ui_handler:
     def sliced_time_props(self) -> list:
         return [self.ui.spin_chunck_day.value(), self.ui.spin_chunck_hour.value(), self.ui.spin_chunck_min.value()]
 
+    @property
+    def selected_pv(self) -> str:
+        return self.ui.inputTxt_pvs.text()
+
+    def clean_loaded_data(self):
+        self.ui.txt_loadedPvs.clear()
+        self.ui.btn_plot.setEnabled(False)
+        self.ui.btn_makeVideo.setEnabled(False)
+        self.ui.label_dataLoaded.setStyleSheet("background-color:rgb(255, 99, 101);color:rgb(0, 0, 0);padding:3;")
+        self.ui.label_dataLoaded.setText("No data loaded")
+
     """  --------------------------------------------------------------------------------------------------------------------
     Desc.: ui function to trigger 'enable' state of a textbox
         -------------------------------------------------------------------------------------------------------------------- """
@@ -60,7 +71,7 @@ class Ui_handler:
         severity: indicator of the type of the message
             values: 'normal', 'danger', 'alert' or 'success'
         -------------------------------------------------------------------------------------------------------------------- """
-    def logMessage(self, message, severity='normal'):
+    def log_message(self, message, severity='normal'):
         if (severity != 'normal'):
             if (severity == 'danger'):
                 color = 'red'

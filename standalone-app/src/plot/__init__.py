@@ -16,9 +16,10 @@ from scipy.signal import  spectrogram
 from scipy.stats import pearsonr, spearmanr
 
 from calculations.correlations import calc_cross_corr
-from calculations.metrics import print_progress_bar
+from utils.metrics import print_progress_bar
 from calculations.timeseries import filter_timeserie
 from plot.utils import PlotPickable
+import config
 
 def plot_data_2D_static(plot_data):
     plot = PlotPickable()
@@ -64,7 +65,7 @@ def plot_data_2D(plot_data: pd.DataFrame, save_fig: bool, dir_path: str, x_axis_
     sns.set_palette(sns.light_palette("green", n_colors=len(plot_data.index.values)))
 
     # creating directory to save images
-    dir_path = '../data/output/' + dir_path
+    dir_path = config.OUTPUT_PATH + dir_path
     if not os.path.exists(dir_path):
         os.mkdir(dir_path)
     
@@ -157,7 +158,7 @@ def plot_data_3D(plot_data: pd.DataFrame, dir_path: str):
     i=0
     size_plot_array = plot_data.index.size
 
-    dir_path = '../data/output/' + dir_path
+    dir_path = config.OUTPUT_PATH + dir_path
     if not os.path.exists(dir_path):
         os.mkdir(dir_path)
 
@@ -230,7 +231,7 @@ def plot_data_2D3D(plot_data: pd.DataFrame, dir_path: str, x_axis_ref: str = 'se
     max_lim = 1.2 * max(plot_data.max())
     min_lim = 1.2 * min(plot_data.min())
 
-    dir_path = '../data/output/' + dir_path
+    dir_path = config.OUTPUT_PATH + dir_path
     if not os.path.exists(dir_path):
         os.mkdir(dir_path)
 
@@ -463,5 +464,5 @@ def plot_directional(data: Dict[str, pd.DataFrame], hls_pvs: list, ui):
                                             'cross': "{:.2f}".format(abs(corr_cc))}, ignore_index=True)
         
     hls_pairs_df = hls_pairs_df.append(well_rf_df)
-    hls_pairs_df.to_excel('../data/output/directional_analysis_results.xlsx')
+    hls_pairs_df.to_excel(f'{config.OUTPUT_PATH}directional_analysis_results.xlsx')
         

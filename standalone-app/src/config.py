@@ -1,3 +1,8 @@
+# Variables
+OUTPUT_PATH = '../data/output/'
+
+
+# Constants
 ARCHIVER_URL = 'http://10.0.38.42/retrieval/data/getData.json'
 
 RFFREQ_PV = 'RF-Gen:GeneralFreq-RB'
