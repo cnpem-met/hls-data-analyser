@@ -5,9 +5,9 @@
 standalone-app/obsoletos/
 
 standalone-app/data/output/*
-!standalone-app/output/.keepme
+!standalone-app/data/output/.keepme
 
 standalone-app/data/input/*
-!standalone-app/input/.keepme
+!standalone-app/data/input/.keepme
 
 notebooks/.ipynb_checkpoints/
