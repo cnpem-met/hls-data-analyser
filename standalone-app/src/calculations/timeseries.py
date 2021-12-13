@@ -1,19 +1,20 @@
 import math
 import time
 from datetime import datetime
+from typing import Dict
 import numpy as np
 import pandas as pd
 from scipy.signal import butter, filtfilt
 
 
-def filter_timeserie(ts_data_df, is_series=True):
+def filter_timeserie(ts_data_df, min_period: float, max_period: float, is_series=True):
     # defining sampling properties
-    ts1 = time.mktime(datetime.strptime(ts_data_df.index.values[0], "%d.%m.%y %H:%M").timetuple())
-    ts2 = time.mktime(datetime.strptime(ts_data_df.index.values[1], "%d.%m.%y %H:%M").timetuple())
+    ts1 = time.mktime(pd.to_datetime(ts_data_df.index.values[0]).timetuple())
+    ts2 = time.mktime(pd.to_datetime(ts_data_df.index.values[1]).timetuple())
     acq_period = ts2 - ts1
     T = acq_period # in seconds
 
-    max_period_filt, min_period_filt = self.ui.spin_filter_max.value(), self.ui.spin_filter_min.value()
+    max_period_filt, min_period_filt = max_period, min_period
     if (min_period_filt != 0 and max_period_filt != 0):
         filter_type = 'bandpass'
         filter_limit = [1/(3600*max_period_filt), 1/(3600*min_period_filt)]
@@ -75,26 +76,25 @@ def is_timeserie_froozen (timeserie, limit_percentage = 0.5):
         is_froozen = True
     return is_froozen
 
-def generate_dynamic_timeseries_data ():
+def slice_timeseries_data (data: Dict[str, pd.DataFrame], days: int, hours: int, minutes: int) -> Dict[str, pd.DataFrame]:
     # trimming original df to get sequencial periods of x hours (1h40, 2h etc.)
     output = {}
-    # for pv, data in zip(self.loaded_pvs, self.data):
-    for data in self.data:
+    for df in data.values():
         # number of periods considering sample period
-        ts1 = time.mktime(datetime.strptime(data.index.values[0], "%d.%m.%y %H:%M").timetuple())
-        ts2 = time.mktime(datetime.strptime(data.index.values[1], "%d.%m.%y %H:%M").timetuple())
+        ts1 = time.mktime(pd.to_datetime(df.index.values[0]).timetuple())
+        ts2 = time.mktime(pd.to_datetime(df.index.values[1]).timetuple())
         sample_period = int((ts2 - ts1)/60) # in minutes
-        chunck_time = self.ui.spin_chunck_day.value() * 24 * 60 + self.ui.spin_chunck_hour.value() * 60 + self.ui.spin_chunck_min.value() # in minutes
+        chunck_time = days * 24 * 60 + hours * 60 + minutes # in minutes
         num_period_in_records = math.ceil(chunck_time/sample_period) 
         # total number of records
-        num_records = len(data.iloc[:,0])
+        num_records = len(df.iloc[:,0])
         # number of chuncks to trim data
         total_periods = int(num_records/num_period_in_records)
         # trim data for each of the columns
-        for col_idx, pv in enumerate(data.columns):
+        for col_idx, pv in enumerate(df.columns):
             trimmed_data = []
             for i in range(total_periods):
-                trimmed_data.append(data.iloc[i*num_period_in_records : (i+1)*num_period_in_records, col_idx])
+                trimmed_data.append(df.iloc[i*num_period_in_records : (i+1)*num_period_in_records, col_idx])
             output[pv] = trimmed_data
     
     return output

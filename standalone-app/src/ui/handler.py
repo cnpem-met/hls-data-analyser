@@ -1,4 +1,3 @@
-
 from PyQt5.QtGui import QColor
 
 
@@ -10,8 +9,8 @@ class Ui_handler:
         self.init_event_listeners()
 
     def init_event_listeners(self):
-        self.ui.btn_fetchFromArchiver.clicked.connect(self.app.on_btn_fetchFromArchiver_clicked)
-        self.ui.btn_plot.clicked.connect(self.app.on_btn_plot_clicked)
+        self.ui.btn_fetchFromArchiver.clicked.connect(self.app.fetch_data_from_archiver)
+        self.ui.btn_plot.clicked.connect(self.app.plot_data)
         self.ui.btn_cleanData.clicked.connect(self.app.clean_loaded_data)
         self.ui.btn_makeVideo.clicked.connect(self.app.make_video)
         self.ui.check_selectPvs.toggled.connect(self.toggle_pv_input)
@@ -43,6 +42,10 @@ class Ui_handler:
     @property
     def save_fig(self) -> bool:
         return self.ui.check_saveFig.isChecked()
+
+    @property
+    def sliced_time_props(self) -> list:
+        return [self.ui.spin_chunck_day.value(), self.ui.spin_chunck_hour.value(), self.ui.spin_chunck_min.value()]
 
     """  --------------------------------------------------------------------------------------------------------------------
     Desc.: ui function to trigger 'enable' state of a textbox

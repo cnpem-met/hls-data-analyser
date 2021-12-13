@@ -1,27 +1,23 @@
-
-from datetime import datetime
 from functools import partial
-from itertools import combinations
 import os
 import time
+from typing import Dict, List
 
 import matplotlib.pyplot as plt
-from matplotlib import dates
 from matplotlib.ticker import FormatStrFormatter
 import matplotlib.dates as mdates
-import matplotlib.offsetbox as offsetbox
 
 import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from scipy.interpolate import make_interp_spline, interp1d
-from scipy.signal import butter, filtfilt, find_peaks, peak_prominences, peak_widths, spectrogram
+from scipy.interpolate import make_interp_spline
+from scipy.signal import  spectrogram
 from scipy.stats import pearsonr, spearmanr
-from calculations.correlations import calc_cross_corr
-from calculations.metrics import printProgressBar
-from calculations.timeseries import filter_timeserie
 
+from calculations.correlations import calc_cross_corr
+from calculations.metrics import print_progress_bar
+from calculations.timeseries import filter_timeserie
 from plot.utils import PlotPickable
 
 def plot_data_2D_static(plot_data):
@@ -60,7 +56,7 @@ def plot_data_2D_static(plot_data):
     ax.grid()
     plt.show()
 
-def plot_data_2D(plot_data, save_fig: bool, dir_path: str):
+def plot_data_2D(plot_data: pd.DataFrame, save_fig: bool, dir_path: str, x_axis_ref: str = 'sector'):
 
     # setting plot style
     sns.set()
@@ -68,7 +64,7 @@ def plot_data_2D(plot_data, save_fig: bool, dir_path: str):
     sns.set_palette(sns.light_palette("green", n_colors=len(plot_data.index.values)))
 
     # creating directory to save images
-    dir_path = './output/' + dir_path
+    dir_path = '../data/output/' + dir_path
     if not os.path.exists(dir_path):
         os.mkdir(dir_path)
     
@@ -85,7 +81,7 @@ def plot_data_2D(plot_data, save_fig: bool, dir_path: str):
     ax2 = ax.twinx()
     i = 0
     num_data = len(plot_data.index)
-    printProgressBar(0, num_data, prefix = 'Progress:', suffix = 'Complete', length = 50)
+    print_progress_bar(0, num_data, prefix = 'Progress:', suffix = 'Complete', length = 50)
     for timestamp, values in plot_data.iterrows():
 
         # smoothing curve (y axis)
@@ -95,15 +91,17 @@ def plot_data_2D(plot_data, save_fig: bool, dir_path: str):
         ax.plot(x_smooth, y_smooth, color='limegreen')
         ax2.scatter(x, values, color='forestgreen', s=4)
 
-        # ax.plot(x_smooth, y_smooth)
-        # ax.plot(x, values)
-
         ax2.axes.get_yaxis().set_visible(False)
         ax.tick_params(axis='both', labelsize=15) #size=13
         ax.grid(True)
 
-        # tickpos = np.linspace(1,20,20)
-        tickpos = np.linspace(1,60,20)
+        if x_axis_ref == 'sector':
+            ax.set_xlabel('Setor do Anel de Armazenamento', fontsize=17, labelpad=6)
+            tickpos = np.linspace(1,20,20)
+        else:
+            ax.set_xlabel('Eixos do prédio', fontsize=17, labelpad=6) 
+            tickpos = np.linspace(1,60,20)
+
         ax.set_xticks(tickpos)
         ax.set_xticklabels(tickpos)
         ax.xaxis.set_major_formatter(FormatStrFormatter('%d'))
@@ -115,16 +113,15 @@ def plot_data_2D(plot_data, save_fig: bool, dir_path: str):
         text = ax.text(0.5, ax.get_ylim()[1]*0.85, timestamp, fontsize=18, bbox=dict(boxstyle='round', facecolor='white', edgecolor='black'))
 
         ax.set_ylabel(r'$\Delta \/ {Nível} \/ [mm]$', fontsize=17) #14
-        ax.set_xlabel('Eixos do prédio', fontsize=17, labelpad=6)
-        # ax.set_xlabel('Setor do Anel de Armazenamento', fontsize=17, labelpad=6)
-
+        
+        
         # saving images if needed
         if (save_fig):
             plt.savefig(f"{dir_path}/hls-ax-{i}.png", dpi=150)
             ax.cla()
             
         if i % 50 == 0:
-            printProgressBar(i + 1, num_data, prefix = 'Progress:', suffix = 'Complete', length = 50)
+            print_progress_bar(i + 1, num_data, prefix = 'Progress:', suffix = 'Complete', length = 50)
 
         ax2.cla()
         i += 1
@@ -132,16 +129,21 @@ def plot_data_2D(plot_data, save_fig: bool, dir_path: str):
     if (not save_fig):
         plt.show()
 
-def plot_data_3D(plot_data):
+def plot_data_3D(plot_data: pd.DataFrame, dir_path: str):
     fig = plt.figure(figsize=(9.8,7))
     ax = fig.add_subplot(111, projection='3d')
     
-    density = len(plot_data.columns.values)
-    repeat_times = 2
-    R = np.linspace(70, 90, repeat_times*(density+1))
-    u = np.linspace(0,  2*np.pi, repeat_times*(density+1))
-    x = np.outer(R, np.cos(u))
-    y = np.outer(R, np.sin(u))
+    # # old way
+    # density = len(plot_data.columns.values)
+    # repeat_times = 2
+    # R = np.linspace(70, 90, repeat_times*(density+1))
+    # u = np.linspace(0,  2*np.pi, repeat_times*(density+1))
+    # x = np.outer(R, np.cos(u))
+    # y = np.outer(R, np.sin(u))
+
+    # # finding x and y coords of cut and fill line
+    # x_cutfill = [x[-1][6*repeat_times], x[-1][17*repeat_times]]
+    # y_cutfill = [y[-1][6*repeat_times], y[-1][17*repeat_times]]
 
     R_smooth = np.linspace(70, 90, 300)
     u_smooth = np.linspace(0,  2*np.pi, 300)
@@ -152,13 +154,10 @@ def plot_data_3D(plot_data):
     max_lim = 1.2 * max(plot_data.max())
     min_lim = 1.2 * min(plot_data.min())
 
-    # finding x and y coords of cut and fill line
-    x_cutfill = [x[-1][6*repeat_times], x[-1][17*repeat_times]]
-    y_cutfill = [y[-1][6*repeat_times], y[-1][17*repeat_times]]
     i=0
     size_plot_array = plot_data.index.size
 
-    dir_path = './output/' + self.ui.inputTxt_dirFig.text()
+    dir_path = '../data/output/' + dir_path
     if not os.path.exists(dir_path):
         os.mkdir(dir_path)
 
@@ -177,35 +176,28 @@ def plot_data_3D(plot_data):
         z_smooth = np.outer(level_smooth, np.ones(300)).T
         surf = ax.plot_surface(x_smooth,y_smooth,z_smooth,cmap='viridis', edgecolor='none') # z in case of disk which is parallel to XY plane is constant and you can directly use h
 
-
-
-
+        # # old way: no smoothing, so more than one point is plotted for each value
+        # # so the curve is composed of flat steps instead of triangles
         # z = np.outer(level, np.ones(repeat_times*(density+1))).T
         # surf = ax.plot_surface(x,y,z,cmap='viridis', edgecolor='none') # z in case of disk which is parallel to XY plane is constant and you can directly use h
         # ax.plot(x_cutfill,y_cutfill, [level[6*repeat_times], level[17*repeat_times]])
+
         colorbar = fig.colorbar(surf, shrink=0.6, aspect=10, pad=0.13)
 
-        # ax.set_title("HLS @ 25/06/2021 (Artesian Well shutdown)", weight='semibold', fontsize=15, y=1.02, x=0.65)
         ax.set_title("HLS @ Poço desligado", weight='semibold', fontsize=15, y=1.02, x=0.65)
         ax.set_xlabel('x [m]', fontsize=12)
         ax.set_zlabel(r'$\Delta \/ {Nível} \/ [mm]$', fontsize=12, labelpad=7) #14
         ax.set_ylabel('y [m]', fontsize=12)
         ax.tick_params(axis='both', labelsize=10)
 
-        ax.view_init(15, -55+180+20)
-        # ax.view_init(15, -55)
-        # ax.view_init(8, -20)
+        ax.view_init(15, 145)
 
         ax.set_zlim(min_lim, max_lim)
         surf.set_clim(min_lim, max_lim)
 
         # drawing box containing the datetime of the plotted serie
-        box_text = timestamp
-        dt = datetime.strptime(timestamp, "%d.%m.%y %H:%M")
-
-        ax.text(ax.get_xlim()[0], ax.get_ylim()[0], ax.get_zlim()[1]*1.25, box_text, fontsize=13, bbox=dict(boxstyle='round', facecolor='white'))
+        ax.text(ax.get_xlim()[0], ax.get_ylim()[0], ax.get_zlim()[1]*1.25, timestamp, fontsize=13, bbox=dict(boxstyle='round', facecolor='white'))
     
-        
         fig.tight_layout()
         plt.savefig(f"{dir_path}/hls-timeseries-{i}.png", dpi=150)
         ax.cla()
@@ -213,7 +205,7 @@ def plot_data_3D(plot_data):
 
         i+=1
 
-def plot_data_2D3D(plot_data):
+def plot_data_2D3D(plot_data: pd.DataFrame, dir_path: str, x_axis_ref: str = 'sector'):
     fig = plt.figure(figsize=(16,7))
     ax_2d = fig.add_subplot(121)
     ax_2d_2 = ax_2d.twinx()
@@ -238,13 +230,13 @@ def plot_data_2D3D(plot_data):
     max_lim = 1.2 * max(plot_data.max())
     min_lim = 1.2 * min(plot_data.min())
 
-    dir_path = './output/' + self.ui.inputTxt_dirFig.text()
+    dir_path = '../data/output/' + dir_path
     if not os.path.exists(dir_path):
         os.mkdir(dir_path)
 
     i=0
     num_data = len(plot_data.index)
-    self.printProgressBar(0, num_data, prefix = 'Progress:', suffix = 'Complete', length = 50)
+    print_progress_bar(0, num_data, prefix = 'Progress:', suffix = 'Complete', length = 50)
 
     for timestamp, values in plot_data.iterrows():
         ##### 2D stuff #####
@@ -256,13 +248,17 @@ def plot_data_2D3D(plot_data):
         # ax2.plot(x_smooth, y_smooth)
         ax_2d_2.scatter(x, values, color='forestgreen', s=4)
 
-
         ax_2d_2.axis('off')
         ax_2d.tick_params(axis='both', labelsize=15) #size=13
         ax_2d.grid(True)
 
-        # tickpos = np.linspace(1,20,20)
-        tickpos = np.linspace(1,60,10)
+        if x_axis_ref == 'sector':
+            tickpos = np.linspace(1,20,20)
+            ax_2d.set_xlabel('Setores do Anel de Armazenamento', fontsize=17, labelpad=6)
+        else:
+            tickpos = np.linspace(1,60,10)
+            ax_2d.set_xlabel('Eixos do prédio', fontsize=17, labelpad=6)
+        
         ax_2d.set_xticks(tickpos)
         ax_2d.set_xticklabels(tickpos)
         ax_2d.xaxis.set_major_formatter(FormatStrFormatter('%d'))
@@ -273,9 +269,8 @@ def plot_data_2D3D(plot_data):
         # drawing box containing the datetime of the plotted serie
         _ = ax_2d.text(0.5, ax_2d.get_ylim()[1]*0.85, timestamp, fontsize=18, bbox=dict(boxstyle='round', facecolor='white', edgecolor='black'))
 
-        ax_2d.set_title("HLS @ Poço ligado", weight='semibold', fontsize=18, y=1.05)
+        # ax_2d.set_title("HLS @ Poço ligado", weight='semibold', fontsize=18, y=1.05)
         ax_2d.set_ylabel(r'$\Delta \/ {Nível} \/ [mm]$', fontsize=17) #14
-        ax_2d.set_xlabel('Eixos do prédio', fontsize=17, labelpad=6)
 
         ##### 3D stuff #####
 
@@ -290,24 +285,16 @@ def plot_data_2D3D(plot_data):
 
         colorbar = fig.colorbar(surf, shrink=0.6, aspect=10, pad=0.13)
 
-        # ax.set_title("HLS @ 25/06/2021 (Artesian Well shutdown)", weight='semibold', fontsize=15, y=1.02, x=0.65)
-        # ax_3d.set_title("HLS @ Poço desligado", weight='semibold', fontsize=15, y=1.02, x=0.65)
         ax_3d.set_xlabel('x [m]', fontsize=12)
-        # ax_3d.set_zlabel(r'$\Delta \/ {Nível} \/ [mm]$', fontsize=12, labelpad=7) #14
         ax_3d.set_ylabel('y [m]', fontsize=12)
         ax_3d.tick_params(axis='both', labelsize=10)
         
 
-        ax_3d.view_init(15, -55+180+20)
-        # ax.view_init(15, -55)
-        # ax.view_init(8, -20)
+        ax_3d.view_init(15, 145)
 
         ax_3d.set_zlim(min_lim, max_lim)
         surf.set_clim(min_lim, max_lim)
 
-        # ax_3d.text(ax_3d.get_xlim()[0], ax_3d.get_ylim()[0], ax_3d.get_zlim()[1]*1.25, box_text, fontsize=13, bbox=dict(boxstyle='round', facecolor='white'))
-    
-        
         fig.tight_layout()
         plt.savefig(f"{dir_path}/hls-timeseries-{i}.png", dpi=150)
         ax_3d.cla()
@@ -316,68 +303,25 @@ def plot_data_2D3D(plot_data):
         ax_2d.cla()
         ax_2d_2.cla()
 
-        self.printProgressBar(i + 1, num_data, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        print_progress_bar(i + 1, num_data, prefix = 'Progress:', suffix = 'Complete', length = 50)
         i+=1
 
-def plot_fft_static():
+def plot_fft_static(fft_data: List[dict]):
     fig, ax = plt.subplots()
-    fft_data = self.calculate_fft(self.data)
     for data in fft_data:
         ax.plot(data['xp'], data['yp'], label=data['var'])
     ax.legend()
+    ax.set_xlabel('Period [h]')
+    ax.set_ylabel('Power Density') #16
     plt.show()
 
-def plot_cross_correl ():
-    # creating sliced (based on the input of 'time chuncks') dfs
-    sliced_data_df = generate_dynamic_timeseries_data()
-    # creating timeserie lists from sliced dfs
-    sliced_data = []
-    for pv in sliced_data_df:
-        sliced_data.append({'pv': pv,
-                            'val': {'ts': [datetime.strptime(df.index[0], "%d.%m.%y %H:%M") for df in sliced_data_df[pv]],
-                                    'serie': np.array([df.to_numpy().reshape(1,df.size)[0] for df in sliced_data_df[pv]])}})
-
-    # checking all possible combinations
-    comb = list(combinations(np.arange(0,len(sliced_data)), 2))
-
-    cross_corr_all = []
-    # cross-correlation calculation upon time series
-    for comb_idx in comb:
-        cross_corr = []
-        ts = []
-        if (len(sliced_data[comb_idx[0]]['val']['serie']) != len(sliced_data[comb_idx[1]]['val']['serie'])):
-            self.ui.logMessage(f'Not evaluating correlation between {sliced_data[comb_idx[0]]["pv"]} and {sliced_data[comb_idx[1]]["pv"]}: divergent array lenghts ({len(sliced_data[comb_idx[0]]["val"]["serie"])} and {len(sliced_data[comb_idx[1]]["val"]["serie"])})', 'danger')
-            continue
-
-        if (sliced_data[comb_idx[0]]['val']['ts'] != sliced_data[comb_idx[1]]['val']['ts']):
-            self.ui.logMessage(f'Not evaluating correlation between {sliced_data[comb_idx[0]]["pv"]} and {sliced_data[comb_idx[1]]["pv"]}: datetimes not coincident', 'danger')
-            continue
-
-        for s1, s2 in zip(sliced_data[comb_idx[0]]['val']['serie'], sliced_data[comb_idx[1]]['val']['serie']):
-            # earth tide pvs needs a bigger repeated percentaged cutoff value
-            perc_cutoff_s1 = 0.5 if 'MARE' not in sliced_data[comb_idx[0]]['pv'] else 0.7
-            perc_cutoff_s2 = 0.5 if 'MARE' not in sliced_data[comb_idx[1]]['pv'] else 0.7
-            # avoiding series that hasn't enough data to be correlated
-            if self.is_timeserie_froozen(s1, perc_cutoff_s1) or self.is_timeserie_froozen(s2, perc_cutoff_s2):
-                cross_corr.append(None)
-                continue
-            # calculating time-based normalized cross-correlation
-            s0 = (s1 - np.mean(s1))/(np.std(s1)*len(s1))
-            s1 = (s2 - np.mean(s2))/(np.std(s2))
-            corr = np.correlate(s0, s1, mode='full')
-            # storing only the maximum coeficient - when series are in phase
-            cross_corr.append(max(corr))
-
-        ts = sliced_data[comb_idx[0]]['val']['ts']
-        cross_corr_all.append({'label': f'{sliced_data[comb_idx[0]]["pv"]} x {sliced_data[comb_idx[1]]["pv"]}', 'val': cross_corr, 'ts': ts})
-    
+def plot_cross_correl (data: List[dict]):
     # plotting bars containing time and frequency correlation information
-
     plot = PlotPickable()
     fig, ax = plot.get_plot_props()
 
     lines, pts = [], []
-    for cross_corr in cross_corr_all:
+    for cross_corr in data:
         line, = ax.plot(cross_corr['ts'], cross_corr['val'], alpha=0.3, label=cross_corr['label'])
         pt = ax.scatter(cross_corr['ts'], cross_corr['val'])
         lines.append(line)
@@ -401,40 +345,41 @@ def plot_cross_correl ():
     fig.tight_layout()
     plt.show()
 
-def plot_fft_dynamic():
-        timeserie = self.data[0].iloc[:,0].values
+def plot_fft_dynamic(data: Dict[str, pd.DataFrame], apply_filter: bool, filter_limits: list):
 
-        # applying filter if needed
-        if (self.ui.check_applyFilter.isChecked()):
-            timeserie = self.filter_timeserie(self.data[0])
+        for df in data.values():
+            # only the first column of df will be used
+            timeserie = df.iloc[:,0].values
 
-        ts1 = time.mktime(datetime.strptime(self.data[0].index.values[0], "%d.%m.%y %H:%M").timetuple())
-        ts2 = time.mktime(datetime.strptime(self.data[0].index.values[1], "%d.%m.%y %H:%M").timetuple())
-        fs = 1/(ts2 - ts1)
+            # applying filter if needed
+            if apply_filter:
+                timeserie = filter_timeserie(df, *filter_limits)
 
-        f, t, Sxx = spectrogram(timeserie, fs)
-        plt.pcolormesh(t, f, Sxx, shading='gouraud')
-        plt.ylabel('Frequency [Hz]')
-        plt.xlabel('Time [sec]')
+            # extracting frequency of acquisition
+            ts1 = time.mktime(pd.to_datetime(df.index.values[0]).timetuple())
+            ts2 = time.mktime(pd.to_datetime(df.index.values[1]).timetuple())
+            fs = 1/(ts2 - ts1)
 
-        fig = plt.figure()
-        ax = fig.add_subplot()
-        ax.plot(timeserie)
+            # plotting spectogram
+            f, t, Sxx = spectrogram(timeserie, fs)
+            plt.pcolormesh(t, f, Sxx, shading='gouraud')
+            plt.title(df.columns[0])
+            plt.ylabel('Frequency [Hz]')
+            plt.xlabel('Time [sec]')
+
         plt.show()
 
-def plot_directional():
+def plot_directional(data: Dict[str, pd.DataFrame], hls_pvs: list, ui):
     # extracting data from HLS sensors and earth tides
-    for data_df in self.data:
-        if (data_df.columns[0] == self.HLS_LEGEND[0]):
-            hls_df = data_df
-        elif (data_df.columns[0] == self.EARTHTIDES_PVS_LIST[0]):
-            tides_df = data_df
-        elif (data_df.columns[0] == self.WELLPRESSURE_PV):
-            well_df = data_df
-        elif (data_df.columns[0] == self.RFFREQ_PV):
-            rf_df = data_df
+    try:
+        hls_df = data['hls_all']
+        tides_df = data['tides']
+        well_df = data['well']
+        rf_df = data['rf']
+    except KeyError:
+        ui.logMessage('Directional analysis failed: it needs hls, tides, well and rf data.', severity='danger')
+        return
     
-    hls_pvs = np.array(self.generate_all_sensors_list())
     # generating list of index for the hls oposite sensors
     pairs_idx = []
     for i in range(10):
@@ -518,5 +463,5 @@ def plot_directional():
                                             'cross': "{:.2f}".format(abs(corr_cc))}, ignore_index=True)
         
     hls_pairs_df = hls_pairs_df.append(well_rf_df)
-    hls_pairs_df.to_excel('./output/tides_analysis.xlsx')
+    hls_pairs_df.to_excel('../data/output/directional_analysis_results.xlsx')
         

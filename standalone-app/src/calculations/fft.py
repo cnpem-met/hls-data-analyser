@@ -1,40 +1,42 @@
-from datetime import datetime
 import time
+from typing import Dict
 import numpy as np
-from scipy.signal import butter, filtfilt, find_peaks, peak_prominences, peak_widths, spectrogram
+import pandas as pd
+from scipy.signal import find_peaks, peak_prominences, peak_widths
 from scipy.fft import rfftfreq, rfft
 
+from calculations.timeseries import filter_timeserie, is_timeserie_froozen
 
-""" --------------------------------------------------------------------------------------------------------------------
-    Desc.: calculate the Discrete Fast Fourier Transformation from a timeseries
-    Args: 
-        data_list: tupple containing timeserie data
-        pv: the name of the pv that holds the data
-    Output: dict containing fft and filtered time data
-        -------------------------------------------------------------------------------------------------------------------- """
-def calculate_fft(data_df_list):
+
+def calculate_fft(data: Dict[str, pd.DataFrame], apply_filter: bool, filter_limits: list):
+    """ calculate the Discrete Fast Fourier Transformation from a timeseries """
+
     fft_plot_data = []
-    for data in data_df_list:
-        timestamp = data.index.values[1]
-        for i, var_name in enumerate(data.columns.values):
-            timeserie = data.loc[:, var_name].values
-            pv = data.columns.values[i]
+    for df in data.values():
+        timestamp = df.index.values[1]
+        for i, var_name in enumerate(df.columns.values):
+            timeserie = df.loc[:, var_name].values
+            pv = df.columns.values[i]
+
             # ignoring datasets with more than 50% of repeated values (=no value)
             perc_cutoff = 0.5 if 'MARE' not in pv else 0.8
-            if self.is_timeserie_froozen(timeserie, perc_cutoff):
-                print('cut')
+            if is_timeserie_froozen(timeserie, perc_cutoff):
                 continue
+
             # defining sampling properties
-            ts1 = time.mktime(datetime.strptime(data.index.values[0], "%d.%m.%y %H:%M").timetuple())
-            ts2 = time.mktime(datetime.strptime(data.index.values[1], "%d.%m.%y %H:%M").timetuple())
+            ts1 = time.mktime(pd.to_datetime(df.index.values[0]).timetuple())
+            ts2 = time.mktime(pd.to_datetime(df.index.values[1]).timetuple())
             acq_period = ts2 - ts1
             T = acq_period # in seconds
             N = len(timeserie)
+
             # creating frequency x axis data
             W = rfftfreq(N, T)
+
             # applying filter if needed
-            if (self.ui.check_applyFilter.isChecked()):
-                timeserie = self.filter_timeserie(data.loc[:, var_name], is_series=True)
+            if (apply_filter):
+                timeserie = filter_timeserie(df.loc[:, var_name], *filter_limits, is_series=True)
+
             # calculating fft
             yr = rfft(timeserie)
             yr = np.abs(yr[1:])**2

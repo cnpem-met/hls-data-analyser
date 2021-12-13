@@ -1,27 +1,10 @@
-# %%
-
-# https://stackoverflow.com/questions/61842432/pyqt5-and-asyncio
-
-import time
-import asyncio
 from functools import partial
 import sys
 from datetime import datetime
-import math
 import os
-from typing import Dict
-import aiohttp
+from typing import Dict, List
+import asyncio
 from itertools import combinations
-import json
-
-from PyQt5.QtWidgets import QMainWindow, QWidget
-from PyQt5.QtGui import (QColor)
-from matplotlib.pyplot import jet
-from scipy.signal.windows.windows import blackman
-from calculations.geometrical import calc_offset
-from calculations.timeseries import filter_timeseries_in_df
-from plot import plot_cross_correl, plot_data_2D, plot_data_2D_static, plot_data_3D, plot_directional, plot_fft_dynamic, plot_fft_static
-from ui import Ui_MainWindow
 
 import qasync
 from qasync import asyncSlot, QApplication
@@ -29,49 +12,19 @@ from qasync import asyncSlot, QApplication
 import numpy as np
 import pandas as pd
 from pandas import DataFrame
+from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
+from PyQt5.QtWidgets import QMainWindow, QWidget
 
-from scipy.optimize import minimize
-from scipy.fft import rfftfreq, rfft
-from scipy.signal import butter, filtfilt, find_peaks, peak_prominences, peak_widths, spectrogram
-from scipy.interpolate import make_interp_spline, interp1d
-from scipy.stats import pearsonr, spearmanr
-
-from matplotlib.pylab import plot, figure, savefig, show
-import matplotlib.pyplot as plt
-from matplotlib.ticker import FormatStrFormatter
-import matplotlib.dates as mdates
-import matplotlib.offsetbox as offsetbox
-
+from archiver import retrieve_data
+from calculations.fft import calculate_fft
+from calculations.geometrical import calc_offset
+from calculations.timeseries import filter_timeseries_in_df, slice_timeseries_data
+from plot import plot_cross_correl, plot_data_2D, plot_data_2D3D, plot_data_2D_static, plot_data_3D, plot_directional, plot_fft_dynamic, plot_fft_static
+from ui import Ui_MainWindow
 from ui.handler import Ui_handler
+import config
 
-
-# ---- packages above are called inside the calling functions to optimize app's startup time -----
-# import seaborn as sns
-# from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
-
-
-"""
-IDEIAS P/ IMPLEMENTAR:
-    - plotar a serie temporal pra cada data que tem uma correlação calculada, para fins de confirmação de que os dados estão integros
-    - tirar manualmente pontos no grafico de correlação (correlações em dias com dados não integros)
-
-"""
-
-
-
-class App(QWidget):
-    _SESSION_TIMEOUT = 1.0
-    RFFREQ_PV = 'RF-Gen:GeneralFreq-RB'
-    WELLPRESSURE_PV = 'INF:POC01:Pressure_mca'
-    EARTHTIDES_PVS_LIST = ['LNLS:MARE:NORTH', 'LNLS:MARE:EAST', 'LNLS:MARE:UP']
-    # HLS_OPOSITE_PVS_LIST = ['TU-17C:SS-HLS-Ax04NE5:Level-Mon', 'TU-06C:SS-HLS-Ax33SW5:Level-Mon',\
-    #                         'TU-11C:SS-HLS-Ax48NW5:Level-Mon', 'TU-01C:SS-HLS-Ax18SE5:Level-Mon']
-    HLS_OPOSITE_PVS_LIST = ['TU-17C:SS-HLS-Ax04NE5:Level-Mon', 'TU-06C:SS-HLS-Ax33SW5:Level-Mon',\
-                            'TU-11C:SS-HLS-Ax48NW5:Level-Mon', 'TU-03C:SS-HLS-Ax24SW1:Level-Mon']
-
-    ARCHIVER_URL = 'http://10.0.38.42/retrieval/data/getData.json'
-    HLS_LEGEND = [17, 16, 15, 14, 13, 1.5, 1.2, 20, 19, 18, 6.8, 6.2, 5, 4, 3, 11.5, 11.2, 10, 9, 8]
-    
+class App(QWidget):  
     def __init__(self, app):
         super().__init__()
         self.mainWindow = QMainWindow()
@@ -92,33 +45,24 @@ class App(QWidget):
 
     def make_video(self):
         """ create a video file from images in directory defined in ui's textbox """
-        from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
-        image_folder='./output/' + self.ui.inputTxt_dirFig.text()
-        fps_movie=12
-        image_files = [image_folder+'/'+img for img in os.listdir(image_folder) if img.endswith(".png")]
+        
+        if not self.ui.figures_path:
+            self.ui.logMessage(f'Video making failed: no directory indicated.', severity='danger')
+            return
+
+        image_folder='../data/output/' + self.ui.figures_path
+        
+        try:
+            image_files = [image_folder+'/'+img for img in os.listdir(image_folder) if img.endswith(".png")]
+        except FileNotFoundError:
+            self.ui.logMessage(f'Video making failed: directory {image_folder} not found.', severity='danger')
+            return
+
         image_files.sort(key=lambda i: int(i.split('/')[-1].split('-')[-1].split('.')[0]))
+
+        fps_movie=12
         clip = ImageSequenceClip(image_files, fps=fps_movie)
-        image_folder+'/'+image_folder.split('/')[-1]+'.mp4'
         clip.write_videofile(image_folder+'/'+image_folder.split('/')[-1]+'.mp4')
-
-    @asyncSlot()
-    async def fetch(self, session, pv, time_from, time_to, is_optimized, mean_minutes):
-        """ Fetch data from Archiver """
-        if is_optimized:
-            pv_query = f'mean_{int(60*mean_minutes)}({pv})'
-        else:
-            pv_query = pv
-        query = {'pv': pv_query, 'from': time_from, 'to': time_to}
-        async with session.get(self.ARCHIVER_URL, params=query) as response:
-            response_as_json = await response.json()
-            return response_as_json
-
-    @asyncSlot()
-    async def retrieve_data(self, pvs, time_from, time_to, isOptimized=False, mean_minutes=0):
-        """ mid function that fetches data from multiple pvs """
-        async with aiohttp.ClientSession() as session:
-            data = await asyncio.gather(*[self.fetch(session, pv, time_from, time_to, isOptimized, mean_minutes) for pv in pvs])
-            return data
 
     def generate_all_sensors_list (self):
         """ utility function to create a list with all the current HLS PVs names """
@@ -131,26 +75,29 @@ class App(QWidget):
             sensors_list.append(f'TU-{sector:02d}C:SS-HLS-Ax{ax:02d}{quad}:Level-Mon')
         return sensors_list
 
-    def generate_HLS_data_to_dynamic_time_plot(self):
+    def find_axis_ref_in_hls_sensors_names(self, pvs_names: list) -> list:
+        return pvs_names.map(lambda name: name[name.index('Ax') + 2: name.index('Ax') + 4])
+
+    def generate_HLS_data_to_dynamic_time_plot(self, sensor_ref: str = 'sector'):
         try:
             data_df = self.data['hls_all'].copy()
         except KeyError:
-            self.ui.logMessage('All HLS data needs to be fetched to run this analysis', severity='alert')
-            return
-
-        data_df.columns = data_df.columns.map(float)
+            raise
 
         if (self.ui.filter_data):
             data_df = filter_timeseries_in_df(data_df, self.ui.filter_min, self.ui.filter_max)
 
-        # referencing in one sensor
-        sens_ref = 19
-        data_df = data_df.sub(data_df.loc[:,sens_ref], axis=0)
+        # # referencing in one arbitrary sensor
+        # sens_ref = 19
+        # data_df = data_df.sub(data_df.loc[:,sens_ref], axis=0)
 
-        # --------- TEMPORARIO -------------
-        # mapeando sensores do setor do anel para eixos do prédio
-        # data_df.columns = [4,1,59,54,18,16,14,12,9,33,31,29,27,24,48,46,44,39]
-        data_df.columns = [4,1,59,57,54,18,16,14,12,9,33,31,29,27,24,48,46,44,42,39]
+        # mapping sensor positions to SR sectors or building axis
+        if sensor_ref == 'sector':
+            data_df.columns = self.HLS_MAPPING_SECTOR
+        else:
+            data_df.columns = self.find_axis_ref_in_hls_sensors_names(data_df.columns)
+
+        data_df.columns = data_df.columns.map(float)
 
         # sorting sensors
         data_df = data_df.sort_index(axis=1)
@@ -164,7 +111,6 @@ class App(QWidget):
         data_df = data_df - data_df.iloc[0,:]
 
         return data_df
-
 
     def clean_loaded_data(self):
         """ clean all the app level variables """
@@ -186,24 +132,25 @@ class App(QWidget):
 
     def pvs_combinations(self):
         return {'hls_all': self.generate_all_sensors_list(),
-                'rf': [self.RFFREQ_PV],
-                'well': [self.WELLPRESSURE_PV],
-                'tides': self.EARTHTIDES_PVS_LIST,
-                'hls_oposite': self.HLS_OPOSITE_PVS_LIST,
+                'rf': [config.RFFREQ_PV],
+                'well': [config.WELLPRESSURE_PV],
+                'tides': config.EARTHTIDES_PVS_LIST,
+                'hls_oposite': config.HLS_OPOSITE_PVS_LIST,
                 'select': [self.ui.ui.inputTxt_pvs.text()]}
 
-    def treat_raw_data(self, data: pd.DataFrame, pv_option: str):
-        if pv_option == 'hls_all':
-            data.columns = self.HLS_LEGEND
-        elif pv_option == 'hls_oposite':
-            data['HLS Easth-West'] = data.iloc[:,0] - data.iloc[:,1]
-            data['HLS North-South'] = data.iloc[:,2] - data.iloc[:,3]
-            data.drop(columns=self.HLS_OPOSITE_PVS_LIST, inplace=True)
+    def treat_hls_oposite_data(self, data: pd.DataFrame):
+
+        # calculating the signal differences
+        data['HLS Easth-West'] = data.iloc[:,0] - data.iloc[:,1]
+        data['HLS North-South'] = data.iloc[:,2] - data.iloc[:,3]
+
+        # ignoring each sensor's data
+        data.drop(columns=self.HLS_OPOSITE_PVS_LIST, inplace=True)
 
         return data
 
     @asyncSlot()
-    async def on_btn_fetchFromArchiver_clicked(self):
+    async def fetch_data_from_archiver(self):
         """ fetch data from Archiver according to user's selections """
 
         self.ui.logMessage('Fetching from Archiver...')
@@ -217,12 +164,11 @@ class App(QWidget):
 
         try:
             # retrieving raw data from Archiver
-            json_data = await self.retrieve_data(pvs, timespam['init'], timespam['end'], self.ui.optimize, self.ui.time_in_minutes)
+            json_data = await retrieve_data(pvs, timespam['init'], timespam['end'], self.ui.optimize, self.ui.time_in_minutes)
 
             # mapping pv's values and timestamps
             data = [np.array(list(map(lambda i: i['val'], serie))) for serie in map(lambda j: j[0]['data'], json_data)]
             time_fmt = list(map(lambda data: datetime.fromtimestamp(data['secs']), json_data[0][0]['data']))
-            # time_fmt = list(map(lambda data: datetime.fromtimestamp(data['secs']).strftime("%d.%m.%y %H:%M"), json_data[0][0]['data']))
 
             # creating pandas dataframe object
             d = {'datetime': time_fmt}
@@ -234,8 +180,9 @@ class App(QWidget):
             data.reset_index(drop=True, inplace=True)
             data = data.set_index('datetime')
 
-            # checking if special treatment is needed
-            data = self.treat_raw_data(data, pv_option)
+            # "hls oposite" pvs choice leads to an early data treatment
+            if pv_option == 'hls_oposite':
+                data = self.treat_hls_oposite_data(data)
 
             # saving to app level variable
             self.data[pv_option] = data
@@ -248,40 +195,118 @@ class App(QWidget):
             self.ui.enable_actions()
             self.add_loaded_pv(pvs)
 
-
     def static_plot_data(self) -> Dict[str, pd.DataFrame]:
         plot_data = {}
 
         for data_ref in self.data:
-            plot_data[data_ref] = filter_timeseries_in_df(self.data[data_ref], self.ui.filter_min, self.ui.filter_max) if self.ui.filter_data else self.data[data_ref]
+            if self.ui.filter_data:
+                plot_data[data_ref] = filter_timeseries_in_df(self.data[data_ref], self.ui.filter_min, self.ui.filter_max)
+            else:
+                plot_data[data_ref] = self.data[data_ref]
         
         return plot_data
 
-    def on_btn_plot_clicked(self):
+    def correlation_plot_data(self) -> List[dict]:
+        # creating sliced (based on the input of 'time chuncks') dfs
+        sliced_data_df = slice_timeseries_data(self.data, *self.ui.sliced_time_props)
+
+        if len(sliced_data_df) <= 1:
+            self.ui.logMessage('Correlation failed: more than one PV required.', 'danger')
+            return None
+
+        # creating timeserie lists from sliced dfs
+        sliced_data = []
+        for pv in sliced_data_df:
+            sliced_data.append({'pv': pv,
+                                'val': {'ts': [df.index[0] for df in sliced_data[pv]],
+                                        'serie': np.array([df.to_numpy().reshape(1,df.size)[0] for df in sliced_data[pv]])}})
+
+        # checking all possible combinations
+        comb = list(combinations(np.arange(0,len(sliced_data)), 2))
+
+        cross_corr_all = []
+        # cross-correlation calculation upon time series
+        for comb_idx in comb:
+            cross_corr = []
+            ts = []
+            if (len(sliced_data[comb_idx[0]]['val']['serie']) != len(sliced_data[comb_idx[1]]['val']['serie'])):
+                self.ui.logMessage(f'Not evaluating correlation between {sliced_data[comb_idx[0]]["pv"]} and {sliced_data[comb_idx[1]]["pv"]}: divergent array lenghts ({len(sliced_data[comb_idx[0]]["val"]["serie"])} and {len(sliced_data[comb_idx[1]]["val"]["serie"])})', 'alert')
+                continue
+
+            if (sliced_data[comb_idx[0]]['val']['ts'] != sliced_data[comb_idx[1]]['val']['ts']):
+                self.ui.logMessage(f'Not evaluating correlation between {sliced_data[comb_idx[0]]["pv"]} and {sliced_data[comb_idx[1]]["pv"]}: datetimes not coincident', 'alert')
+                continue
+
+            for s1, s2 in zip(sliced_data[comb_idx[0]]['val']['serie'], sliced_data[comb_idx[1]]['val']['serie']):
+                # earth tide pvs needs a bigger repeated percentaged cutoff value
+                perc_cutoff_s1 = 0.5 if 'MARE' not in sliced_data[comb_idx[0]]['pv'] else 0.7
+                perc_cutoff_s2 = 0.5 if 'MARE' not in sliced_data[comb_idx[1]]['pv'] else 0.7
+                # avoiding series that hasn't enough data to be correlated
+                if self.is_timeserie_froozen(s1, perc_cutoff_s1) or self.is_timeserie_froozen(s2, perc_cutoff_s2):
+                    cross_corr.append(None)
+                    continue
+                # calculating time-based normalized cross-correlation
+                s0 = (s1 - np.mean(s1))/(np.std(s1)*len(s1))
+                s1 = (s2 - np.mean(s2))/(np.std(s2))
+                corr = np.correlate(s0, s1, mode='full')
+                # storing only the maximum coeficient - when series are in phase
+                cross_corr.append(max(corr))
+
+            ts = sliced_data[comb_idx[0]]['val']['ts']
+            cross_corr_all.append({'label': f'{sliced_data[comb_idx[0]]["pv"]} x {sliced_data[comb_idx[1]]["pv"]}', 'val': cross_corr, 'ts': ts})
+
+        return cross_corr_all
+
+    def check_output_path(self):
+        if not self.ui.figures_path:
+            dir_name = datetime.now().strftime('%d%m%y%H%M')
+            self.ui.logMessage(f'No directory name provided. Saving movie in dir {dir_name}')
+        else:
+            dir_name = self.ui.figures_path
+
+    def plot_data(self):
         """ plots data based on user's selections """
 
         plot_type = self.ui.get_plot_type()
 
         if plot_type['analysis'] == 'correlation':
-            plot_cross_correl()
+            cross_corr_data = self.correlation_plot_data()
+            if cross_corr_data:
+                plot_cross_correl(cross_corr_data)
         elif plot_type['analysis'] == 'directional':
-            plot_directional()
+            plot_directional(self.data, self.generate_all_sensors_list(), self.ui)
         elif plot_type['analysis'] == 'fft':
             if plot_type['is_static']:
-                plot_fft_static()
+                # treating data for plotting
+                fft_data = calculate_fft(self.data, self.ui.filter_data, [self.ui.filter_min, self.ui.filter_max])
+
+                plot_fft_static(fft_data)
             else:
-                plot_fft_dynamic()
+                plot_fft_dynamic(self.data, self.ui.filter_data, [self.ui.filter_min, self.ui.filter_max])
         else:
             if plot_type['is_static']:
+                # treating data for plotting
                 plot_data = self.static_plot_data()
+
                 plot_data_2D_static(plot_data)
             else:
-                # arranging data structure
-                plot_data = self.generate_HLS_data_to_dynamic_time_plot()
-                if plot_type['is_2d']:
-                    plot_data_2D(plot_data, self.ui.save_fig, self.ui.figures_path)
+                # defining sensors position reference (hard-coded, but an UI option would be better)
+                sensor_pos_ref = 'sector'
+                try:
+                    # treating data for plotting
+                    plot_data = self.generate_HLS_data_to_dynamic_time_plot(sensor_pos_ref)
+                except KeyError:
+                    self.ui.logMessage('All HLS data needs to be fetched to run this analysis', severity='alert')
                 else:
-                    plot_data_3D(plot_data)
+                    if plot_type['is_2d']:
+                        if self.ui.save_fig:
+                            dir_name = self.check_output_path()
+                        plot_data_2D(plot_data, self.ui.save_fig, dir_name, sensor_pos_ref)
+                    else:
+                        dir_name = self.check_output_path()
+                        
+                        # here both ...3D and ...2D3D can be called
+                        plot_data_2D3D(plot_data, dir_name, sensor_pos_ref)
                 
 
 async def main():
