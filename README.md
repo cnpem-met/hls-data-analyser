@@ -14,8 +14,8 @@ points to a Jupyter notebook with just a few features, although it can be expand
 ### Requirements
 Python >= 3.7 is recommended, and specific packages are needed.
 
-### Use
-![App's UI](./imgs/ui.png)
+### Usage
+![App's UI](./imgs/ui.png)  
 To obtain a movie with a 3D plot of HLS data on a specific period of time:
 1. On the 'fetching options', select the time period and 'All HLS sensors' for the PV
 2. Click 'Fetch from Archiver'
